@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>USDT0 → gUSDT Converter</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.10.0/ethers.umd.min.js"></script>
+
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    padding: 40px;
+    background: #0b0c10;
+    color: #c5c6c7;
+  }
+  .card {
+    background: #1f2833;
+    padding: 25px;
+    border-radius: 10px;
+    width: 380px;
+  }
+  button {
+    width: 100%;
+    padding: 12px;
+    margin-top: 12px;
+    font-size: 16px;
+    background: #45a29e;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+  }
+  button:hover {
+    background: #66fcf1;
+  }
+</style>
+</head>
+
+<body>
+
+<div class="card">
+  <h2>USDT0 → gUSDT Converter (Stable Testnet)</h2>
+  <p id="wallet">Wallet: Not Connected</p>
+  <p id="balance">USDT0 Balance: --</p>
+
+  <input id="amount" type="text" placeholder="Amount to convert" style="width:100%;padding:8px;" />
+
+  <button onclick="connectWallet()">Connect Wallet</button>
+  <button onclick="swap()">Swap USDT0 → gUSDT</button>
+</div>
+
+<script>
+const USDT0 = "0x78Cf24370174180738C5B8E352B6D14c83a6c9A9";
+const WRAPPER = "0xcAB8F3ed8528655E0C2fad1C504c6CfEccf50B90";
+const STABLE_CHAIN_ID = "0x899"; // 2201 decimal
+
+const usdt0Abi = [
+  "function approve(address spender, uint256 amount) returns (bool)",
+  "function balanceOf(address) view returns (uint256)"
+];
+
+const wrapperAbi = [
+  "function withdraw(uint256 amount) returns (uint256)"
+];
+
+let provider, signer, account;
+
+async function connectWallet() {
+  if (!window.ethereum) {
+    alert("Please install MetaMask");
+    return;
+  }
+
+  // Request wallet
+  const accounts = await ethereum.request({ method: "eth_requestAccounts" });
+  account = accounts[0];
+
+  // Ensure Stable Testnet 2201
+  await ethereum.request({
+    method: "wallet_switchEthereumChain",
+    params: [{ chainId: STABLE_CHAIN_ID }]
+  }).catch(async (err) => {
+    if (err.code === 4902) {
+      await ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [{
+          chainId: STABLE_CHAIN_ID,
+          chainName: "Stable Testnet",
+          rpcUrls: ["https://rpc.testnet.stable.xyz"],
+          nativeCurrency: { name: "STBL", symbol: "STBL", decimals: 18 }
+        }]
+      });
+    }
+  });
+
+  provider = new ethers.BrowserProvider(window.ethereum);
+  signer = await provider.getSigner();
+
+  document.getElementById("wallet").innerText = `Wallet: ${account}`;
+  await updateBalance();
+}
+
+async function updateBalance() {
+  const usdt0 = new ethers.Contract(USDT0, usdt0Abi, signer);
+  const bal = await usdt0.balanceOf(account);
+  document.getElementById("balance").innerText =
+    "USDT0 Balance: " + ethers.formatUnits(bal, 18);
+}
+
+async function swap() {
+  if (!signer) return alert("Connect wallet first");
+
+  const amountInput = document.getElementById("amount").value;
+  if (!amountInput) return alert("Enter an amount");
+
+  const amount = ethers.parseUnits(amountInput, 18);
+
+  const usdt0 = new ethers.Contract(USDT0, usdt0Abi, signer);
+  const wrapper = new ethers.Contract(WRAPPER, wrapperAbi, signer);
+
+  const bal = await usdt0.balanceOf(account);
+  if (bal < amount) return alert("Not enough USDT0!");
+
+  // Approve
+  const approveTx = await usdt0.approve(WRAPPER, amount);
+  await approveTx.wait();
+
+  // Swap
+  const tx = await wrapper.withdraw(amount);
+  await tx.wait();
+
+  alert("Successfully swapped USDT0 → gUSDT!");
+  await updateBalance();
+}
+</script>
+
+</body>
+</html>
